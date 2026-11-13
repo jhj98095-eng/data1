@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>클라이언트 기반 엑셀 매출 데이터 통계 분석기</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS (xlsx) for 100% in-browser Excel parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js CDN for interactive visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+    .drag-active {
+      border-color: #3b82f6 !important;
+      background-color: #eff6ff !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+          <i data-lucide="shield-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            온디바이스 엑셀 통계 분석 대시보드
+            <span class="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">100% 로컬 연산 · 외부 전송 없음</span>
+          </h1>
+          <p class="text-xs text-slate-500">브라우저 메모리 안에서만 엑셀을 즉각 파싱하고 핵심 통계 3대 기법으로 분석합니다.</p>
+        </div>
+      </div>
+      <div id="resetArea" class="hidden">
+        <button onclick="resetApp()" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          새 파일 분석하기
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+    <!-- 1. UPLOAD VIEW (Default) -->
+    <div id="uploadView" class="max-w-2xl mx-auto space-y-6 pt-4">
+      
+      <!-- Security Notice Banner -->
+      <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
+        <i data-lucide="lock" class="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"></i>
+        <div class="text-xs text-emerald-950 space-y-1">
+          <p class="font-bold">안전한 브라우저 자체 메모리 연산</p>
+          <p class="text-emerald-800 leading-relaxed">
+            선택하신 엑셀 파일은 어떤 서버나 외부 네트워크로도 전송되지 않습니다.
+            브라우저의 JavaScript 메모리(SheetJS 라이브러리)에서만 즉시 읽고 통계 처리를 완료하므로 기밀 데이터도 안심하고 분석할 수 있습니다.
+          </p>
+        </div>
+      </div>
+
+      <!-- Drag & Drop Zone -->
+      <div id="dropZone" class="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white rounded-2xl p-10 text-center transition cursor-pointer shadow-sm group">
+        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden">
+        
+        <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-4 group-hover:scale-105 transition">
+          <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+        </div>
+        
+        <h3 class="text-base font-bold text-slate-900">엑셀 파일을 마우스로 끌어다 놓으세요</h3>
+        <p class="text-xs text-slate-500 mt-1">또는 여기를 클릭하여 컴퓨터에서 직접 파일을 선택하세요 (.xlsx, .xls)</p>
+
+        <div class="mt-6 flex flex-wrap justify-center gap-2">
+          <span class="text-[11px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-mono">권장 규격: [기준월], [기업A], [기업B], ...</span>
+          <span class="text-[11px] bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md font-mono">가상기업 3개 5개년매출데이터.xlsx 호환</span>
+        </div>
+      </div>
+
+      <!-- Quick Analysis Guide -->
+      <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+        <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-4 h-4 text-blue-600"></i>
+          탑재된 핵심 통계 3대 분석 기법
+        </h4>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div class="p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <span class="font-bold text-blue-600">1. 기술통계량 & 기초분포</span>
+            <p class="text-slate-500 mt-1">평균, 표준편차, 중앙값, 최댓값/최솟값을 통한 기업별 기본 체력 및 매출 산포도 파악</p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <span class="font-bold text-indigo-600">2. 단순 선형 회귀 추세 (OLS)</span>
+            <p class="text-slate-500 mt-1">월별 성장 기울기(Slope, β)와 결정계수(R²)를 도출하여 성장 가속도 및 안정성 검증</p>
+          </div>
+          <div class="p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <span class="font-bold text-purple-600">3. 피어슨 상관분석 (r)</span>
+            <p class="text-slate-500 mt-1">기업 간 상관계수 행렬을 계산하여 시장 동반성장 및 고객 잠식(대체재 관계) 규명</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Error Alert -->
+      <div id="errorAlert" class="hidden p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 text-rose-600 shrink-0"></i>
+        <span id="errorMessage">파일을 읽는 중 문제가 발생했습니다.</span>
+      </div>
+
+    </div>
+
+    <!-- 2. DASHBOARD VIEW (Shown after file load) -->
+    <div id="dashboardView" class="hidden space-y-8">
+
+      <!-- File Metadata Header -->
+      <div class="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xs">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">분석 완료</span>
+            <span id="metaFileName" class="text-xs font-semibold text-slate-500 font-mono">가상기업 3개 5개년매출데이터.xlsx</span>
+          </div>
+          <h2 class="text-xl font-extrabold text-slate-900 mt-1 flex items-center gap-2">
+            <i data-lucide="bar-chart-2" class="w-6 h-6 text-blue-600"></i>
+            기업별 매출 핵심 통계 분석 결과 리포트
+          </h2>
+          <p id="metaDataInfo" class="text-xs text-slate-500 mt-0.5">총 60개 월간 레코드 · 3개 분석 대상 기업 식별됨</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="window.print()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition flex items-center gap-1.5">
+            <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+            리포트 인쇄
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards Container -->
+      <div id="kpiCardsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <!-- 3 Statistical Techniques Modules -->
+      <div class="space-y-8">
+
+        <!-- Module 1: Descriptive Statistics -->
+        <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
+          <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+            <div>
+              <span class="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded">통계기법 #1</span>
+              <h3 class="text-lg font-bold text-slate-900 mt-1">기술통계량(Descriptive Statistics) 및 요약 분포</h3>
+              <p class="text-xs text-slate-500">평균, 표준편차, 중앙값, 최솟값/최댓값을 통한 기업별 실적의 중심위치 및 변동폭 측정</p>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">N = 관측치 개수</span>
+          </div>
+
+          <!-- Descriptive Table -->
+          <div class="overflow-x-auto border border-slate-200 rounded-lg">
+            <table class="w-full text-xs text-left" id="descTable">
+              <thead class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+                <tr>
+                  <th class="p-3">분석 지표</th>
+                  <!-- Series columns inserted here -->
+                </tr>
+              </thead>
+              <tbody id="descTableBody" class="divide-y divide-slate-100">
+                <!-- Rows inserted dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Descriptive Bar Chart -->
+          <div class="mt-6">
+            <h4 class="text-xs font-bold text-slate-700 uppercase mb-2">기업별 월평균 매출 및 변동폭(표준편차) 시각화</h4>
+            <div class="h-64 w-full bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <canvas id="chart-desc"></canvas>
+            </div>
+          </div>
+
+          <!-- Automated Commentary 1 -->
+          <div class="mt-5 p-4 rounded-xl bg-blue-50/60 border border-blue-100 text-xs text-blue-950 space-y-1.5 leading-relaxed" id="commentary-desc">
+            <!-- Injected via JS -->
+          </div>
+        </section>
+
+        <!-- Module 2: Linear Regression & Trendline -->
+        <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
+          <div class="pb-4 mb-4 border-b border-slate-100">
+            <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded">통계기법 #2</span>
+            <h3 class="text-lg font-bold text-slate-900 mt-1">단순 선형 회귀분석 (Linear Regression & Trendline)</h3>
+            <p class="text-xs text-slate-500">최소자승법(OLS)을 활용한 월별 추세 성장 기울기(Slope, β) 및 결정계수(R²) 모델링</p>
+          </div>
+
+          <!-- Regression Metric Badges -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5" id="regressionCards">
+            <!-- Injected via JS -->
+          </div>
+
+          <div class="h-80 w-full bg-slate-50 p-2 rounded-lg border border-slate-100">
+            <canvas id="chart-regression"></canvas>
+          </div>
+
+          <!-- Automated Commentary 2 -->
+          <div class="mt-5 p-4 rounded-xl bg-indigo-50/60 border border-indigo-100 text-xs text-indigo-950 space-y-1.5 leading-relaxed" id="commentary-regression">
+            <!-- Injected via JS -->
+          </div>
+        </section>
+
+        <!-- Module 3: Pearson Correlation -->
+        <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
+          <div class="pb-4 mb-4 border-b border-slate-100">
+            <span class="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded">통계기법 #3</span>
+            <h3 class="text-lg font-bold text-slate-900 mt-1">피어슨 상관분석 (Pearson Correlation Analysis)</h3>
+            <p class="text-xs text-slate-500">기업 간 매출 공분산 정규화를 통한 선형 연관성 계수(r) 산출 (-1.0 ~ +1.0)</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <!-- Correlation Matrix Table -->
+            <div class="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+              <div class="bg-slate-100 px-4 py-2.5 font-bold text-xs text-slate-700 border-b border-slate-200">
+                상관행렬 (Correlation Matrix, r)
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-center text-xs" id="corrTable">
+                  <!-- Injected via JS -->
+                </table>
+              </div>
+            </div>
+
+            <!-- Correlation Scatter Plot -->
+            <div class="h-72 w-full bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <canvas id="chart-correlation"></canvas>
+            </div>
+          </div>
+
+          <!-- Automated Commentary 3 -->
+          <div class="mt-5 p-4 rounded-xl bg-purple-50/60 border border-purple-100 text-xs text-purple-950 space-y-1.5 leading-relaxed" id="commentary-corr">
+            <!-- Injected via JS -->
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Raw Data Table (Collapsible) -->
+      <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-6">
+        <details class="group">
+          <summary class="flex items-center justify-between cursor-pointer list-none">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <i data-lucide="database" class="w-4 h-4 text-slate-600"></i>
+              파싱된 원본 데이터 테이블 확인 (<span id="rawRowCount">0</span>건)
+            </h3>
+            <span class="text-xs text-blue-600 group-open:rotate-180 transition-transform">
+              <i data-lucide="chevron-down" class="w-4 h-4"></i>
+            </span>
+          </summary>
+          <div class="mt-4 max-h-72 overflow-y-auto border border-slate-200 rounded-lg">
+            <table class="w-full text-xs text-left" id="parsedDataTable">
+              <thead class="bg-slate-50 text-slate-700 font-bold sticky top-0 border-b border-slate-200" id="parsedDataTableHead">
+              </thead>
+              <tbody class="divide-y divide-slate-100" id="parsedDataTableBody">
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-auto">
+    <p>클라이언트 메모리 전용 엑셀 통계 분석기 · 외부 서버 통신 0건 (No Network Calls)</p>
+  </footer>
+
+  <!-- APPLICATION JAVASCRIPT LOGIC -->
+  <script>
+    // Global State
+    let parsedDataset = null;
+    let activeCharts = {};
+
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // DOM References
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadView = document.getElementById('uploadView');
+    const dashboardView = document.getElementById('dashboardView');
+    const resetArea = document.getElementById('resetArea');
+    const errorAlert = document.getElementById('errorAlert');
+    const errorMessage = document.getElementById('errorMessage');
+
+    // Drag & Drop Listeners
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    ['dragenter', 'dragover'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-active');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-active');
+      });
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) handleFileUpload(files[0]);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) handleFileUpload(e.target.files[0]);
+    });
+
+    function showError(msg) {
+      errorAlert.classList.remove('hidden');
+      errorMessage.textContent = msg;
+    }
+
+    function hideError() {
+      errorAlert.classList.add('hidden');
+    }
+
+    // Reset Application
+    function resetApp() {
+      parsedDataset = null;
+      fileInput.value = '';
+      hideError();
+      uploadView.classList.remove('hidden');
+      dashboardView.classList.add('hidden');
+      resetArea.classList.add('hidden');
+
+      // Destroy charts
+      Object.keys(activeCharts).forEach(key => {
+        if (activeCharts[key]) activeCharts[key].destroy();
+      });
+      activeCharts = {};
+    }
+
+    // Handle File In-Memory (No network upload)
+    function handleFileUpload(file) {
+      hideError();
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          
+          if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+            showError('엑셀 파일에 유효한 시트가 존재하지 않습니다.');
+            return;
+          }
+
+          // Choose Sheet: Prefer '월간매출' if exists, otherwise first sheet
+          let targetSheetName = workbook.SheetNames.includes('월간매출') ? '월간매출' : workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[targetSheetName];
+
+          // Convert to JSON array of objects
+          const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+          if (rawRows.length < 2) {
+            showError('시트에 충분한 데이터 행이 존재하지 않습니다 (최소 2행 필요).');
+            return;
+          }
+
+          // Extract Headers
+          const headerRow = rawRows[0];
+          let dateColIndex = -1;
+          const seriesCols = [];
+
+          headerRow.forEach((colName, idx) => {
+            if (!colName) return;
+            const str = String(colName).trim();
+            if (dateColIndex === -1 && (str.includes('월') || str.includes('일') || str.includes('날짜') || str.includes('Date') || str.includes('기준'))) {
+              dateColIndex = idx;
+            } else {
+              seriesCols.push({ index: idx, name: str });
+            }
+          });
+
+          if (dateColIndex === -1) dateColIndex = 0; // Default first col as date
+
+          // Extract Data
+          const dates = [];
+          const seriesData = {};
+          seriesCols.forEach(s => seriesData[s.name] = []);
+
+          for (let r = 1; r < rawRows.length; r++) {
+            const row = rawRows[r];
+            if (!row || row[dateColIndex] === null || row[dateColIndex] === undefined) continue;
+
+            // Date parsing
+            let rawDate = row[dateColIndex];
+            let dateStr = '';
+            if (rawDate instanceof Date) {
+              dateStr = rawDate.toISOString().slice(0, 7);
+            } else {
+              dateStr = String(rawDate).trim();
+            }
+            if (!dateStr) continue;
+
+            dates.push(dateStr);
+            seriesCols.forEach(s => {
+              const val = parseFloat(row[s.index]);
+              seriesData[s.name].push(isNaN(val) ? 0 : val);
+            });
+          }
+
+          if (dates.length === 0 || seriesCols.length === 0) {
+            showError('유효한 시계열 숫자 데이터를 추출할 수 없습니다.');
+            return;
+          }
+
+          parsedDataset = {
+            fileName: file.name,
+            sheetName: targetSheetName,
+            dates,
+            seriesCols: seriesCols.map(s => s.name),
+            seriesData
+          };
+
+          // Render Dashboard
+          renderDashboard(parsedDataset);
+
+        } catch (err) {
+          console.error(err);
+          showError('엑셀 파싱 중 오류가 발생했습니다: ' + err.message);
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
+    // STATISTICAL CALCULATION UTILITIES
+    function calcStats(arr) {
+      const n = arr.length;
+      if (n === 0) return null;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const sum = arr.reduce((a, b) => a + b, 0);
+      const mean = sum / n;
+      const median = n % 2 === 0 ? (sorted[n/2 - 1] + sorted[n/2]) / 2 : sorted[Math.floor(n/2)];
+      const min = sorted[0];
+      const max = sorted[n - 1];
+      const variance = arr.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (n - 1 || 1);
+      const std = Math.sqrt(variance);
+      return { n, mean, median, min, max, std, sum };
+    }
+
+    function calcRegression(yArr) {
+      const n = yArr.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, sumYY = 0;
+      for (let i = 0; i < n; i++) {
+        const x = i + 1;
+        const y = yArr[i];
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumXX += x * x;
+        sumYY += y * y;
+      }
+      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+      const trend = [];
+      for (let i = 0; i < n; i++) {
+        trend.push(slope * (i + 1) + intercept);
+      }
+      // R-squared
+      const meanY = sumY / n;
+      const ssTotal = yArr.reduce((acc, y) => acc + Math.pow(y - meanY, 2), 0);
+      const ssRes = yArr.reduce((acc, y, i) => acc + Math.pow(y - trend[i], 2), 0);
+      const r2 = ssTotal === 0 ? 0 : 1 - (ssRes / ssTotal);
+
+      return { slope, intercept, trend, r2 };
+    }
+
+    function calcPearsonCorr(arr1, arr2) {
+      const n = arr1.length;
+      const m1 = arr1.reduce((a, b) => a + b, 0) / n;
+      const m2 = arr2.reduce((a, b) => a + b, 0) / n;
+      let num = 0, d1 = 0, d2 = 0;
+      for (let i = 0; i < n; i++) {
+        const diff1 = arr1[i] - m1;
+        const diff2 = arr2[i] - m2;
+        num += diff1 * diff2;
+        d1 += diff1 * diff1;
+        d2 += diff2 * diff2;
+      }
+      if (d1 === 0 || d2 === 0) return 0;
+      return num / (Math.sqrt(d1) * Math.sqrt(d2));
+    }
+
+    // Palette Colors
+    const palette = [
+      { border: '#2563eb', bg: 'rgba(37, 99, 235, 0.7)', light: 'bg-blue-50 text-blue-700' },
+      { border: '#10b981', bg: 'rgba(16, 185, 129, 0.7)', light: 'bg-emerald-50 text-emerald-700' },
+      { border: '#f43f5e', bg: 'rgba(244, 63, 94, 0.7)', light: 'bg-rose-50 text-rose-700' },
+      { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.7)', light: 'bg-purple-50 text-purple-700' },
+      { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.7)', light: 'bg-amber-50 text-amber-700' }
+    ];
+
+    // MAIN DASHBOARD RENDERER
+    function renderDashboard(ds) {
+      uploadView.classList.add('hidden');
+      dashboardView.classList.remove('hidden');
+      resetArea.classList.remove('hidden');
+
+      // Set Metadata
+      document.getElementById('metaFileName').textContent = ds.fileName;
+      document.getElementById('metaDataInfo').textContent = `시트: [${ds.sheetName}] · 총 ${ds.dates.length}개월 레코드 (${ds.dates[0]} ~ ${ds.dates[ds.dates.length - 1]}) · ${ds.seriesCols.length}개 대상 열`;
+
+      // 1. KPI Cards
+      const kpiContainer = document.getElementById('kpiCardsGrid');
+      kpiContainer.innerHTML = '';
+      const statsMap = {};
+      const regMap = {};
+
+      ds.seriesCols.forEach((name, idx) => {
+        const vals = ds.seriesData[name];
+        const stat = calcStats(vals);
+        const reg = calcRegression(vals);
+        statsMap[name] = stat;
+        regMap[name] = reg;
+
+        const color = palette[idx % palette.length];
+        const card = document.createElement('div');
+        card.className = 'bg-white p-5 rounded-xl border border-slate-200 shadow-xs hover:shadow-md transition';
+        card.innerHTML = `
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <span class="text-xs font-semibold px-2 py-0.5 rounded ${color.light}">${name}</span>
+              <h3 class="text-xl font-bold text-slate-900 mt-1">${name.replace(/매출.*$/g, '').trim()}</h3>
+            </div>
+            <div class="w-9 h-9 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-sm">
+              #${idx + 1}
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 mt-4 text-xs">
+            <div>
+              <p class="text-slate-400">총 누적 매출합계</p>
+              <p class="text-base font-extrabold text-slate-900 mt-0.5">${stat.sum.toFixed(2)} <span class="text-slate-400 font-normal">억</span></p>
+            </div>
+            <div>
+              <p class="text-slate-400">월별 추세(Slope)</p>
+              <p class="text-base font-extrabold ${reg.slope >= 0 ? 'text-emerald-600' : 'text-rose-600'} mt-0.5">${reg.slope >= 0 ? '+' : ''}${reg.slope.toFixed(4)}</p>
+            </div>
+            <div>
+              <p class="text-slate-400">월평균 (±표준편차)</p>
+              <p class="font-semibold text-slate-700 mt-0.5">${stat.mean.toFixed(2)} ± ${stat.std.toFixed(2)}</p>
+            </div>
+            <div>
+              <p class="text-slate-400">최대 / 최소</p>
+              <p class="font-semibold text-slate-700 mt-0.5">${stat.max.toFixed(2)} / ${stat.min.toFixed(2)}</p>
+            </div>
+          </div>
+        `;
+        kpiContainer.appendChild(card);
+      });
+
+      // 2. Module 1: Descriptive Statistics Table & Chart
+      renderModule1(ds, statsMap);
+
+      // 3. Module 2: Regression Module
+      renderModule2(ds, regMap);
+
+      // 4. Module 3: Correlation Module
+      renderModule3(ds);
+
+      // 5. Raw Data Table
+      renderRawDataTable(ds);
+
+      lucide.createIcons();
+    }
+
+    // RENDER MODULE 1: DESCRIPTIVE
+    function renderModule1(ds, statsMap) {
+      // Table Header
+      const thead = document.getElementById('descTable').querySelector('thead tr');
+      thead.innerHTML = '<th class="p-3">분석 통계 지표</th>';
+      ds.seriesCols.forEach(name => {
+        thead.innerHTML += `<th class="p-3 text-slate-900 font-bold">${name}</th>`;
+      });
+
+      // Table Body Rows
+      const tbody = document.getElementById('descTableBody');
+      tbody.innerHTML = '';
+      const metrics = [
+        { label: '월평균 매출 (Mean)', key: 'mean', suffix: ' 억원' },
+        { label: '중앙값 (Median)', key: 'median', suffix: ' 억원' },
+        { label: '표준편차 (Std Dev, σ)', key: 'std', suffix: ' 억원' },
+        { label: '최솟값 (Minimum)', key: 'min', suffix: ' 억원' },
+        { label: '최댓값 (Maximum)', key: 'max', suffix: ' 억원' },
+        { label: '누적 합계 (Sum)', key: 'sum', suffix: ' 억원' }
+      ];
+
+      metrics.forEach(m => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        let cells = `<td class="p-3 font-semibold text-slate-700">${m.label}</td>`;
+        ds.seriesCols.forEach(col => {
+          const val = statsMap[col][m.key].toFixed(2);
+          cells += `<td class="p-3 font-mono font-bold text-slate-800">${val}${m.suffix}</td>`;
+        });
+        tr.innerHTML = cells;
+        tbody.appendChild(tr);
+      });
+
+      // Bar Chart: Mean & Std
+      const ctx = document.getElementById('chart-desc').getContext('2d');
+      if (activeCharts['desc']) activeCharts['desc'].destroy();
+
+      activeCharts['desc'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ds.seriesCols.map(c => c.replace(/매출.*$/g, '').trim()),
+          datasets: [
+            {
+              label: '월평균 매출 (억원)',
+              data: ds.seriesCols.map(c => statsMap[c].mean),
+              backgroundColor: ds.seriesCols.map((_, i) => palette[i % palette.length].bg)
+            },
+            {
+              label: '표준편차 (변동폭, 억원)',
+              data: ds.seriesCols.map(c => statsMap[c].std),
+              backgroundColor: '#94a3b8'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { title: { display: true, text: '억원' }, beginAtZero: true } }
+        }
+      });
+
+      // Automated Commentary
+      const topMeanCol = [...ds.seriesCols].sort((a, b) => statsMap[b].mean - statsMap[a].mean)[0];
+      const maxStdCol = [...ds.seriesCols].sort((a, b) => statsMap[b].std - statsMap[a].std)[0];
+
+      document.getElementById('commentary-desc').innerHTML = `
+        <h5 class="font-bold text-blue-900 flex items-center gap-1.5 mb-1">
+          <i data-lucide="book-open" class="w-3.5 h-3.5"></i> 기술통계학적 해설 및 시사점
+        </h5>
+        <p>• <strong>매출 규모 1위:</strong> <strong>${topMeanCol}</strong>이(가) 월평균 <strong>${statsMap[topMeanCol].mean.toFixed(2)}억 원</strong>으로 전체 대상 중 가장 높은 사업 체급을 기록했습니다.</p>
+        <p>• <strong>산포도 및 변동폭:</strong> <strong>${maxStdCol}</strong>의 표준편차가 <strong>${statsMap[maxStdCol].std.toFixed(2)}억 원</strong>으로 가장 커, 관측 기간 동안 실적의 성장 또는 변동 스펙트럼이 가장 넓게 나타났습니다.</p>
+      `;
+    }
+
+    // RENDER MODULE 2: REGRESSION
+    function renderModule2(ds, regMap) {
+      const cardsContainer = document.getElementById('regressionCards');
+      cardsContainer.innerHTML = '';
+
+      ds.seriesCols.forEach((col, idx) => {
+        const r = regMap[col];
+        const isUp = r.slope >= 0;
+        const color = palette[idx % palette.length];
+        const card = document.createElement('div');
+        card.className = 'p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs';
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-800">${col}</span>
+            <span class="font-mono text-[11px] px-2 py-0.5 rounded ${isUp ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'} font-bold">
+              ${isUp ? '성장형' : '역성장형'}
+            </span>
+          </div>
+          <p class="font-mono font-bold text-sm text-slate-900 mt-2">y = ${r.slope.toFixed(4)}x + ${r.intercept.toFixed(2)}</p>
+          <div class="mt-2 space-y-0.5 text-slate-600">
+            <p>• 월간 추세 기울기(β): <strong>${isUp ? '+' : ''}${r.slope.toFixed(4)} 억/월</strong></p>
+            <p>• 모델 설명력(결정계수 R²): <strong>${(r.r2 * 100).toFixed(1)}%</strong></p>
+          </div>
+        `;
+        cardsContainer.appendChild(card);
+      });
+
+      // Regression Chart
+      const datasets = [];
+      ds.seriesCols.forEach((col, idx) => {
+        const color = palette[idx % palette.length];
+        const r = regMap[col];
+        datasets.push({
+          label: `${col} 실측`,
+          data: ds.seriesData[col],
+          borderColor: color.border,
+          backgroundColor: color.border,
+          pointRadius: 2,
+          borderWidth: 1.5
+        });
+        datasets.push({
+          label: `${col} 추세선 (β=${r.slope >= 0 ? '+' : ''}${r.slope.toFixed(3)})`,
+          data: r.trend,
+          borderColor: color.border,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          borderWidth: 2
+        });
+      });
+
+      const ctx = document.getElementById('chart-regression').getContext('2d');
+      if (activeCharts['regression']) activeCharts['regression'].destroy();
+
+      activeCharts['regression'] = new Chart(ctx, {
+        type: 'line',
+        data: { labels: ds.dates, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { title: { display: true, text: '매출액 (억원)' } } }
+        }
+      });
+
+      // Commentary
+      const sortedBySlope = [...ds.seriesCols].sort((a, b) => regMap[b].slope - regMap[a].slope);
+      const fastest = sortedBySlope[0];
+      const lowest = sortedBySlope[sortedBySlope.length - 1];
+
+      document.getElementById('commentary-regression').innerHTML = `
+        <h5 class="font-bold text-indigo-900 flex items-center gap-1.5 mb-1">
+          <i data-lucide="book-open" class="w-3.5 h-3.5"></i> 선형 회귀 통계학적 해설 및 시사점
+        </h5>
+        <p>• <strong>최고 성장 모멘텀:</strong> <strong>${fastest}</strong>의 회귀선 기울기는 <strong>+${regMap[fastest].slope.toFixed(4)}</strong>로, 매월 평균 약 ${(regMap[fastest].slope * 10000).toFixed(0)}만 원씩 견고한 우상향 성장을 이어가고 있습니다.</p>
+        <p>• <strong>취약 추세:</strong> 반면 <strong>${lowest}</strong>은(는) 기울기가 <strong>${regMap[lowest].slope.toFixed(4)}</strong>(으)로 상대적 정체 또는 하향 추세를 보여 제품 혁신 및 수주 확대 전략이 요구됩니다.</p>
+      `;
+    }
+
+    // RENDER MODULE 3: CORRELATION
+    function renderModule3(ds) {
+      const n = ds.seriesCols.length;
+      const matrix = [];
+
+      for (let i = 0; i < n; i++) {
+        matrix[i] = [];
+        for (let j = 0; j < n; j++) {
+          if (i === j) {
+            matrix[i][j] = 1.0;
+          } else {
+            matrix[i][j] = calcPearsonCorr(ds.seriesData[ds.seriesCols[i]], ds.seriesData[ds.seriesCols[j]]);
+          }
+        }
+      }
+
+      // Render Matrix Table
+      const corrTable = document.getElementById('corrTable');
+      let tableHtml = '<thead><tr class="bg-slate-50 text-slate-700 border-b border-slate-200"><th class="p-2.5">기업 구분</th>';
+      ds.seriesCols.forEach(c => tableHtml += `<th class="p-2.5 font-bold">${c.replace(/매출.*$/g, '').trim()}</th>`);
+      tableHtml += '</tr></thead><tbody class="divide-y divide-slate-100">';
+
+      for (let i = 0; i < n; i++) {
+        tableHtml += `<tr><td class="p-2.5 font-bold text-slate-700 bg-slate-50">${ds.seriesCols[i].replace(/매출.*$/g, '').trim()}</td>`;
+        for (let j = 0; j < n; j++) {
+          const r = matrix[i][j];
+          let bg = 'bg-white';
+          if (i === j) bg = 'bg-blue-100 font-bold text-blue-900';
+          else if (r > 0.5) bg = 'bg-emerald-100 font-semibold text-emerald-900';
+          else if (r < -0.3) bg = 'bg-rose-100 font-semibold text-rose-900';
+          tableHtml += `<td class="p-2.5 font-mono ${bg}">${r.toFixed(3)}</td>`;
+        }
+        tableHtml += '</tr>';
+      }
+      tableHtml += '</tbody>';
+      corrTable.innerHTML = tableHtml;
+
+      // Scatter Plot of First Two Series
+      if (n >= 2) {
+        const colA = ds.seriesCols[0];
+        const colB = ds.seriesCols[1];
+        const scatterData = ds.seriesData[colA].map((v, i) => ({ x: v, y: ds.seriesData[colB][i] }));
+
+        const ctx = document.getElementById('chart-correlation').getContext('2d');
+        if (activeCharts['corr']) activeCharts['corr'].destroy();
+
+        activeCharts['corr'] = new Chart(ctx, {
+          type: 'scatter',
+          data: {
+            datasets: [{
+              label: `${colA.replace(/매출.*$/g, '').trim()} vs ${colB.replace(/매출.*$/g, '').trim()} 산점도 (r = ${matrix[0][1].toFixed(3)})`,
+              data: scatterData,
+              backgroundColor: 'rgba(99, 102, 241, 0.7)',
+              pointRadius: 4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { title: { display: true, text: colA } },
+              y: { title: { display: true, text: colB } }
+            }
+          }
+        });
+
+        // Commentary
+        const rVal = matrix[0][1];
+        let relationDesc = '';
+        if (rVal >= 0.7) relationDesc = '매우 강한 양의 선형 관계(동반 성장)';
+        else if (rVal >= 0.3) relationDesc = '완만한 양의 선형 관계';
+        else if (rVal <= -0.5) relationDesc = '뚜렷한 음의 선형 관계(대체재/시장 잠식 관계)';
+        else relationDesc = '선형 상관성이 낮은 독립적 관계';
+
+        document.getElementById('commentary-corr').innerHTML = `
+          <h5 class="font-bold text-purple-900 flex items-center gap-1.5 mb-1">
+            <i data-lucide="book-open" class="w-3.5 h-3.5"></i> 피어슨 상관분석 통계학적 해설
+          </h5>
+          <p>• <strong>계수 해석:</strong> 상관계수(r)는 -1부터 +1 사이의 값을 가지며, <strong>${colA.replace(/매출.*$/g, '').trim()}</strong>와(과) <strong>${colB.replace(/매출.*$/g, '').trim()}</strong>의 상관계수는 <strong>r = ${rVal.toFixed(3)}</strong>(${relationDesc})로 산출되었습니다.</p>
+          <p>• 음의 상관계수를 보이는 관계는 한 기업의 수주 증가가 타 기업의 수주 감소로 이어지는 제로섬 경쟁 구도를 나타냅니다.</p>
+        `;
+      }
+    }
+
+    // RENDER RAW DATA TABLE
+    function renderRawDataTable(ds) {
+      document.getElementById('rawRowCount').textContent = ds.dates.length;
+      const thead = document.getElementById('parsedDataTableHead');
+      let headHtml = '<tr><th class="p-2.5 font-bold">기준월</th>';
+      ds.seriesCols.forEach(c => headHtml += `<th class="p-2.5 font-bold">${c}</th>`);
+      headHtml += '</tr>';
+      thead.innerHTML = headHtml;
+
+      const tbody = document.getElementById('parsedDataTableBody');
+      tbody.innerHTML = '';
+      ds.dates.forEach((date, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        let cells = `<td class="p-2.5 font-mono text-slate-700">${date}</td>`;
+        ds.seriesCols.forEach(col => {
+          cells += `<td class="p-2.5 font-mono text-slate-800">${ds.seriesData[col][i].toFixed(2)}</td>`;
+        });
+        tr.innerHTML = cells;
+        tbody.appendChild(tr);
+      });
+    }
+  </script>
+</body>
+</html>
